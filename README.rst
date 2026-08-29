@@ -47,3 +47,22 @@ Running as a service
 --------------------
 Sshuttle can also be run as a service and configured using a config management system:
 https://medium.com/@mike.reider/using-sshuttle-as-a-service-bec2684a65fe
+
+
+Connection resilience
+---------------------
+The client can keep a tunnel alive and reconnect after an unexpected
+sshuttle/SSH failure. By default, the built-in ``ssh`` command is given
+``ServerAliveInterval=15``, ``ServerAliveCountMax=3`` and
+``TCPKeepAlive=yes`` options. Reconnects use bounded exponential backoff,
+starting at one second and reaching a maximum of 30 seconds.
+
+For example::
+
+    sshuttle --keepalive-interval 10 --keepalive-count 3 \
+        --backoff-maximum 60 --max-restarts 5 -r user@host 10.0.0.0/8
+
+``--max-restarts`` counts failed runs and defaults to unlimited. Supplying
+``-e/--ssh-cmd`` disables automatic SSH keepalive modification and preserves
+the command exactly as supplied. Daemon mode retains its historical one-shot
+behavior because it forks away from the supervising process.

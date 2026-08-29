@@ -311,10 +311,45 @@ parser.add_argument(
 parser.add_argument(
     "-e", "--ssh-cmd",
     metavar="CMD",
-    default="ssh",
+    default=None,
     help="""
-    the command to use to connect to the remote [%(default)s]
+    the command to use to connect to the remote (default: ssh)
     """
+)
+parser.add_argument(
+    "--keepalive-interval",
+    metavar="SECONDS",
+    type=int,
+    default=15,
+    help="send SSH keepalive probes every SECONDS (default: 15)",
+)
+parser.add_argument(
+    "--keepalive-count",
+    metavar="COUNT",
+    type=int,
+    default=3,
+    help="allow COUNT missed SSH keepalive probes (default: 3)",
+)
+parser.add_argument(
+    "--backoff-initial",
+    metavar="SECONDS",
+    type=float,
+    default=1.0,
+    help="initial reconnect delay (default: 1)",
+)
+parser.add_argument(
+    "--backoff-maximum",
+    metavar="SECONDS",
+    type=float,
+    default=30.0,
+    help="maximum reconnect delay (default: 30)",
+)
+parser.add_argument(
+    "--max-restarts",
+    metavar="COUNT",
+    type=int,
+    default=None,
+    help="stop after COUNT failed runs (default: unlimited)",
 )
 parser.add_argument(
     "--no-cmd-delimiter",

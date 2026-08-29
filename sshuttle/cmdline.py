@@ -12,6 +12,7 @@ from sshuttle.options import parser, parse_ipport
 from sshuttle.helpers import family_ip_tuple, log, Fatal
 from sshuttle.sudoers import sudoers
 from sshuttle.namespace import enter_namespace
+from sshuttle.resilience import RetryPolicy, add_keepalives, run_with_retries
 
 
 def main():
@@ -22,6 +23,13 @@ def main():
     args = [*env_args, *sys.argv[1:]]
 
     opt = parser.parse_args(args)
+
+    if opt.keepalive_interval < 1 or opt.keepalive_count < 1:
+        parser.error('keepalive values must be positive')
+    if opt.backoff_initial <= 0 or opt.backoff_maximum <= 0:
+        parser.error('backoff values must be positive')
+    if opt.max_restarts is not None and opt.max_restarts < 0:
+        parser.error('max-restarts must be non-negative')
 
     if opt.sudoers_no_modify:
         # sudoers() calls exit() when it completes
@@ -106,29 +114,55 @@ def main():
                 ssyslog.close_stdin()
                 ssyslog.stdout_to_syslog()
                 ssyslog.stderr_to_syslog()
-            return_code = client.main(ipport_v6, ipport_v4,
-                                      opt.ssh_cmd,
-                                      remotename,
-                                      opt.python,
-                                      opt.latency_control,
-                                      opt.latency_buffer_size,
-                                      opt.dns,
-                                      nslist,
-                                      opt.method,
-                                      sh,
-                                      opt.auto_hosts,
-                                      opt.auto_nets,
-                                      includes,
-                                      excludes,
-                                      opt.daemon,
-                                      opt.to_ns,
-                                      opt.pidfile,
-                                      opt.user,
-                                      opt.group,
-                                      opt.sudo_pythonpath,
-                                      opt.add_cmd_delimiter,
-                                      opt.remote_shell,
-                                      opt.tmark)
+            ssh_cmd = add_keepalives(opt.ssh_cmd,
+                                     opt.keepalive_interval,
+                                     opt.keepalive_count)
+
+            def run_once():
+                # client.main() adds discovered DNS servers and exclusion
+                # rules in-place; each retry must start from clean inputs.
+                try:
+                    return client.main(ipport_v6, ipport_v4,
+                                       ssh_cmd,
+                                       remotename,
+                                       opt.python,
+                                       opt.latency_control,
+                                       opt.latency_buffer_size,
+                                       opt.dns,
+                                       list(nslist),
+                                       opt.method,
+                                       list(sh) if sh is not None else None,
+                                       opt.auto_hosts,
+                                       opt.auto_nets,
+                                       list(includes),
+                                       list(excludes),
+                                       opt.daemon,
+                                       opt.to_ns,
+                                       opt.pidfile,
+                                       opt.user,
+                                       opt.group,
+                                       opt.sudo_pythonpath,
+                                       opt.add_cmd_delimiter,
+                                       opt.remote_shell,
+                                       opt.tmark)
+                except Fatal as e:
+                    # Connection/setup failures are normally surfaced by
+                    # client.main() as Fatal instead of a return code. Treat
+                    # them as failed runs so the integrated supervisor can
+                    # reconnect just like the original shuttler wrapper.
+                    log('fatal: %s' % e)
+                    return 99
+
+            # Daemon mode forks away from this process, so supervising its
+            # return code would be incorrect. The daemon retains sshuttle's
+            # historical one-shot behavior.
+            if opt.daemon:
+                return_code = run_once()
+            else:
+                return_code = run_with_retries(
+                    run_once,
+                    RetryPolicy(opt.backoff_initial, opt.backoff_maximum),
+                    opt.max_restarts)
 
             if return_code == 0:
                 log('Normal exit code, exiting...')
