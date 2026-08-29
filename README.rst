@@ -59,7 +59,7 @@ starting at one second and reaching a maximum of 30 seconds.
 
 For example::
 
-    sshuttle --keepalive-interval 10 --keepalive-count 3 \
+    sshuttler --keepalive-interval 10 --keepalive-count 3 \
         --backoff-maximum 60 --max-restarts 5 -r user@host 10.0.0.0/8
 
 ``--max-restarts`` counts failed runs and defaults to unlimited. Supplying
